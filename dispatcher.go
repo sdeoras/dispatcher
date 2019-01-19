@@ -22,7 +22,7 @@ type dispatcher struct {
 	maxDispatched int32
 	active        *int32
 	poke          chan struct{}
-	sync.Mutex
+	mu            sync.Mutex
 }
 
 // New provides a new instance of dispatcher
@@ -69,8 +69,8 @@ func (d *dispatcher) pending() int {
 
 func (d *dispatcher) Do(f func()) {
 	// lock
-	d.Lock()
-	defer d.Unlock()
+	d.mu.Lock()
+	defer d.mu.Unlock()
 
 	// push into queue
 	d.funcStack.push(f)
@@ -102,9 +102,9 @@ func (d *dispatcher) start() {
 	go func() {
 		// run infinite loop waiting every second
 		for {
-			d.Lock()
+			d.mu.Lock()
 			d.dispatch()
-			d.Unlock()
+			d.mu.Unlock()
 			select {
 			case <-d.poke:
 			case <-time.After(time.Second):
