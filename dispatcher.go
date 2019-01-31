@@ -18,32 +18,32 @@ type Dispatcher interface {
 // dispatcher implements Dispatcher interface such that is allows user
 // to limit the number of active goroutines running at a time.
 type dispatcher struct {
-	funcStack     *queue
-	maxDispatched int32
-	active        *int32
-	poke          chan struct{}
-	mu            sync.Mutex
+	queue  *queue
+	cap    int32
+	active *int32
+	poke   chan struct{}
+	mu     sync.Mutex
 }
 
 // New provides a new instance of dispatcher
 func New(numConcurrent int32) *dispatcher {
 	d := new(dispatcher)
-	d.funcStack = new(queue)
-	d.maxDispatched = numConcurrent
+	d.queue = new(queue)
+	d.cap = numConcurrent
 	d.active = new(int32)
 	d.poke = make(chan struct{})
-	d.start() // starts a daemon that will schedule pending funcs
+	d.bot() // starts a daemon that will schedule pending funcs
 	return d
 }
 
-// queue is a list of func
+// queue is a queue of func
 type queue []func()
 
 func (s *queue) len() int {
 	return len(*s)
 }
 
-// push pushes new entry at the end of the list
+// push pushes new entry at the end of the queue
 func (s *queue) push(f func()) {
 	*s = append(*s, f)
 }
@@ -64,7 +64,7 @@ func (d *dispatcher) IsRunning() bool {
 }
 
 func (d *dispatcher) pending() int {
-	return d.funcStack.len()
+	return d.queue.len()
 }
 
 func (d *dispatcher) Do(f func()) {
@@ -73,15 +73,15 @@ func (d *dispatcher) Do(f func()) {
 	defer d.mu.Unlock()
 
 	// push into queue
-	d.funcStack.push(f)
+	d.queue.push(f)
 
 	d.dispatch()
 }
 
 // dispatch is an internal function
 func (d *dispatcher) dispatch() {
-	for *(d.active) < d.maxDispatched {
-		f := d.funcStack.pop()
+	for *(d.active) < d.cap {
+		f := d.queue.pop()
 		if f == nil {
 			break
 		}
@@ -97,8 +97,8 @@ func (d *dispatcher) dispatch() {
 	}
 }
 
-// start is an internal function that monitors the active functions and dispatches new from pending list
-func (d *dispatcher) start() {
+// bot is an internal function that monitors the active functions and dispatches new from pending queue
+func (d *dispatcher) bot() {
 	go func() {
 		// run infinite loop waiting every second
 		for {
